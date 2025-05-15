@@ -3,3 +3,9 @@
 
 # Ignore log files
 *.log
+
+# Ignore test data
+sensor_data.json
+
+# Ignore compiled python files
+venv/
