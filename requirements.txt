@@ -1,0 +1,7 @@
+Flask==3.0.2
+requests==2.31.0
+python-dotenv==1.0.1
+adafruit-circuitpython-sht31d==2.3.0
+adafruit-circuitpython-ads1x15==2.2.0
+adafruit-blinka==8.45.0
+board==1.0 
