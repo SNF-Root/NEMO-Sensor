@@ -2,6 +2,14 @@ import cv2
 import numpy as np
 import os
 
+#lets try a dynamic cropping and fall into static cropping if it does not work too well
+def cropStaticFurnaces(imagePath):
+    readImage = cv2.imread(imagePath)
+    x, y, w, h = 290, 475, 50, 100
+
+    cropped = readImage[y: y+h, x: x+w]
+    return cropped
+
 
 def detectLight(image):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -32,6 +40,7 @@ def detectLight(image):
     mask_combined = cv2.bitwise_or(mask_combined, mask_green)
 
     cv2.imwrite("preprocess/processedImage.png", mask_combined)
+    return "preprocess/processedImage.png"
 
 def classifyColor(image):
     img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
@@ -55,10 +64,34 @@ def classifyColor(image):
 
 
 
-img = cv2.imread("images/stack.jpeg")
-detectLight(img)
-processedPath = "preprocess/processedImage.png"
-classifyColor(processedPath)
-textinput = input("q to quit(): ")
-if(textinput == 'q'):
-    os.remove("preprocess/processedImage.png")
+def show_coordinates(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print(f"X: {x}, Y: {y}")
+
+    img = cv2.imread("images/fullfurnace.jpeg")
+    cv2.namedWindow("image")
+    cv2.setMouseCallback("image", show_coordinates)
+
+    while True:
+        cv2.imshow("image", img)
+        if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
+            break
+
+    cv2.destroyAllWindows()
+
+
+
+# img = cv2.imread("images/stack.jpeg")
+# detectLight(img)
+# processedPath = "preprocess/processedImage.png"
+# classifyColor(processedPath)
+# textinput = input("q to quit(): ")
+# if(textinput == 'q'):
+#     os.remove("preprocess/processedImage.png")
+
+
+
+croppedImg = cropStaticFurnaces("images/fullfurnace.jpeg")
+filePath = detectLight(croppedImg)
+classifyColor(filePath)
+
