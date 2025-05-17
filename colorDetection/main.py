@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 
 
 def detectLight(image):
@@ -25,16 +26,39 @@ def detectLight(image):
     mask_orange = cv2.inRange(hsv, lower_orange, upper_orange)
     mask_green = cv2.inRange(hsv, lower_green, upper_green)
 
-
-    mask_combined = cv2.bitwise_or(mask_red1, mask_red2) #detects the color that is on using short circuiting
+    #detects the color using shortcircuiting
+    mask_combined = cv2.bitwise_or(mask_red1, mask_red2) 
     mask_combined = cv2.bitwise_or(mask_combined, mask_orange) 
     mask_combined = cv2.bitwise_or(mask_combined, mask_green)
 
-    return mask_combined
+    cv2.imwrite("preprocess/processedImage.png", mask_combined)
+
+def classifyColor(image):
+    img = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
+
+    if img is None:
+        print("file not found")
+
+    height, width = img.shape
+    section = height // 3
+
+    top = img[0: section, :]
+    middle = img[section : section * 2, :]
+    bottom = img[section * 2: , :]
+
+    if(np.any(top == 255)):
+        print("GREEN ON")
+    if(np.any(middle == 255)):
+        print("ORANGE ON")
+    if(np.any(bottom == 255)):
+        print("RED ON")
+
+
 
 img = cv2.imread("images/stack.jpeg")
-result = detectLight(img)
-
-cv2.imshow("OUTPUT", result)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+detectLight(img)
+processedPath = "preprocess/processedImage.png"
+classifyColor(processedPath)
+textinput = input("q to quit(): ")
+if(textinput == 'q'):
+    os.remove("preprocess/processedImage.png")
