@@ -74,7 +74,7 @@ def show_coordinates(event, x, y, flags, param):
 
     while True:
         cv2.imshow("image", img)
-        if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
+        if cv2.waitKey(1) & 0xFF == 27:
             break
 
     cv2.destroyAllWindows()
