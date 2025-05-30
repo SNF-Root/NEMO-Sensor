@@ -82,12 +82,33 @@ def classifyColor(image, tube):
     # print("middle_sum: ",  middle_sum)
     # print("bottom_sum: ",  bottom_sum)
 
+    red = False
+    orange = False
+    green = False
+
+
     if(top_sum > 125):
-        print(f"tube {tube+1}: RED ON")
+        # print(f"tube {tube+1}: RED ON")
+        red = True
     if(middle_sum > 125):
-        print(f"tube {tube+1}: ORANGE ON")
+        # print(f"tube {tube+1}: ORANGE ON")
+        orange =  True
     if(bottom_sum > 125):
-        print(f"tube {tube+1}: GREEN ON")
+        # print(f"tube {tube+1}: GREEN ON")
+        green = True
+
+    if orange and green:
+        print(f"Tube {tube+1}: Waiting for USER Input")
+    elif green and red:
+        print(f"Tube {tube+1}: Ready to load  wafers")
+    else:
+        if red:
+            print(f"Tube {tube+1}: ERROR! CONTACT STAFF")
+        elif green:
+            print(f"Tube {tube+1}: Running Recipe")
+        elif orange:
+            print(f"Tube {tube+1}: IDLE & Ready")
+
 
     print('--------------------------------------------')
 
