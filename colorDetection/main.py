@@ -1,33 +1,69 @@
 import cv2
 import numpy as np
 import os
+import time
 
 #lets try a dynamic cropping and fall into static cropping if it does not work too well
 def cropStaticFurnaces(imagePath, tube):
     readImage = cv2.imread(imagePath)
-    dimensionArray = [[362, 380, 25, 55], [362, 500, 25, 55],  [362,618, 25, 55], [362,737, 25, 55],
-                      [979, 353, 25, 55], [980, 486, 25, 55], [981, 619, 25, 55], [983, 749, 25, 55],
-                      [1403, 349, 25, 55], [1408, 479, 25, 55], [1407, 608, 25, 55], [1408, 736, 25, 55]] 
+    dimensionArray = [
+    [285, 378, 25, 55],
+    [283, 500, 25, 55],
+    [284, 620, 25, 55],
+    [291, 732, 25, 55],
+    [904, 354, 25, 55],
+    [902, 485, 25, 55],
+    [904, 617, 25, 55],
+    [906, 750, 25, 55],
+    [1327, 354, 25, 55],
+    [1331, 484, 25, 55],
+    [1332, 606, 25, 55],
+    [1331, 736, 25, 55]
+    ] 
 
 
     x, y, w, h = dimensionArray[tube][0], dimensionArray[tube][1], dimensionArray[tube][2], dimensionArray[tube][3]
 
     cropped = readImage[y: y+h, x: x+w]
-    cv2.imwrite("preprocess/croppedimg.jpg",  cropped)
+    # cropped = mitigate_bleeding(cropped)
+    cv2.imwrite(f"preprocess/croppedimg{tube}.jpg",  cropped)
     return cropped
 
 #processes the image into black and white
-def detectLight(image):
+def detectLight(image, tube):
+
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
     lower_white = np.array([0, 0, 200])
     upper_white = np.array([180, 40, 255])
 
-
     mask_combined = cv2.inRange(hsv, lower_white, upper_white)
 
-    cv2.imwrite("preprocess/processedImage.png", mask_combined)
-    return "preprocess/processedImage.png"
+
+    mask_bgr = cv2.cvtColor(mask_combined, cv2.COLOR_GRAY2BGR)
+
+    height, width = mask_bgr.shape[:2]
+
+
+    border_color = (0, 0, 255)  # Red in BGR
+    thickness = 2
+    cv2.rectangle(mask_bgr, (0, 0), (width - 1, height - 1), border_color, thickness)
+
+
+    third = height // 3
+    cv2.line(mask_bgr, (0, third), (width, third), border_color, 1)
+    cv2.line(mask_bgr, (0, third * 2), (width, third * 2), border_color, 1)
+
+    save_path = f"preprocess/processedImage{tube}.png"
+    cv2.imwrite(save_path, mask_bgr)
+
+    return save_path
+
+
+    # cv2.imwrite(f"preprocess/processedImage{tube}.png", mask_combined)
+    # return f"preprocess/processedImage{tube}.png"
+
+
 
 #tells us what color is on, based on position of the light
 def classifyColor(image, tube):
@@ -76,7 +112,8 @@ def classifyColor(image, tube):
                 bottom_sum+=1
             else:
                 bottom_array.append(0)
-        
+   
+
 
     # print("top sum: ", top_sum)
     # print("middle_sum: ",  middle_sum)
@@ -86,37 +123,54 @@ def classifyColor(image, tube):
     orange = False
     green = False
 
-
-    if(top_sum > 125):
+ 
+    if(top_sum > 135):
         # print(f"tube {tube+1}: RED ON")
         red = True
-    if(middle_sum > 125):
+    if(middle_sum > 135):
         # print(f"tube {tube+1}: ORANGE ON")
         orange =  True
-    if(bottom_sum > 125):
+    if(bottom_sum > 135):
         # print(f"tube {tube+1}: GREEN ON")
         green = True
 
-    if orange and green:
-        print(f"Tube {tube+1}: Waiting for USER Input")
-    elif green and red:
-        print(f"Tube {tube+1}: Ready to load  wafers")
+    # print(f"TUBE {tube + 1}: ", top_sum, middle_sum, bottom_sum)
+
+    if(not red and not orange and not green):
+        print(f"tube {tube + 1}: VIEW OBSTRUCTED!")    
     else:
-        if red:
-            print(f"Tube {tube+1}: ERROR! CONTACT STAFF")
-        elif green:
-            print(f"Tube {tube+1}: Running Recipe")
-        elif orange:
-            print(f"Tube {tube+1}: IDLE & Ready")
+        if orange and green:
+            print(f"Tube {tube+1}: Waiting for USER Input")
+        elif green and red:
+            print(f"Tube {tube+1}: Ready to load  wafers")
+        else:
+            if red:
+                print(f"Tube {tube+1}: ERROR! CONTACT STAFF")
+            elif green:
+                print(f"Tube {tube+1}: Running Recipe")
+            elif orange:
+                print(f"Tube {tube+1}: IDLE & Ready")
 
 
     print('--------------------------------------------')
 
-def show_coordinates(event, x, y, flags, param):
-    if event == cv2.EVENT_LBUTTONDOWN:
-        print(f"X: {x}, Y: {y}")
+def mitigate_bleeding(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    img = cv2.imread("images/highres0.jpg")
+    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    
+    kernel = np.ones((3, 3), np.uint8)
+
+    cleaned = cv2.erode(thresh, kernel, iterations = 1)
+    print("got here")
+    return cleaned 
+
+def configure_points():
+    def show_coordinates(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            print(f"X: {x}, Y: {y}")
+
+    img = cv2.imread("images/highres.jpg")
     cv2.namedWindow("image")
     cv2.setMouseCallback("image", show_coordinates)
 
@@ -156,11 +210,19 @@ def capture1080p():
 # if(textinput == 'q'):
 #     os.remove("preprocess/processedImage.png")
 
+# capture1080p()
+# configure_points()
 
-for i in range(0, 12):
-    croppedImg = cropStaticFurnaces("images/highres0.jpg", i)
-    filePath = detectLight(croppedImg)
-    classifyColor(filePath, i)
+for x in range(1):
+    capture1080p()
+    for i in range(0, 12):
+        croppedImg = cropStaticFurnaces("images/highres.jpg", i)
+        filePath = detectLight(croppedImg, i)
+        # filePath = f"preprocess/processedImage{i}.png"
+        classifyColor(filePath, i)
+    
+    time.sleep(5)
+
 
 # for i in range(5):
 #     capture1080p(i)
