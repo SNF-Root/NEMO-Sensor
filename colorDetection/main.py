@@ -39,8 +39,10 @@ def detectLight(image, tube):
 
     mask_combined = cv2.inRange(hsv, lower_white, upper_white)
 
+    kernel = np.ones((2, 2), np.uint8)
+    mask_eroded = cv2.erode(mask_combined, kernel, iterations=1)
 
-    mask_bgr = cv2.cvtColor(mask_combined, cv2.COLOR_GRAY2BGR)
+    mask_bgr = cv2.cvtColor(mask_eroded, cv2.COLOR_GRAY2BGR)
 
     height, width = mask_bgr.shape[:2]
 
@@ -53,6 +55,9 @@ def detectLight(image, tube):
     third = height // 3
     cv2.line(mask_bgr, (0, third), (width, third), border_color, 1)
     cv2.line(mask_bgr, (0, third * 2), (width, third * 2), border_color, 1)
+
+
+
 
     save_path = f"preprocess/processedImage{tube}.png"
     cv2.imwrite(save_path, mask_bgr)
@@ -124,13 +129,13 @@ def classifyColor(image, tube):
     green = False
 
  
-    if(top_sum > 135):
+    if(top_sum > 100):
         # print(f"tube {tube+1}: RED ON")
         red = True
-    if(middle_sum > 135):
+    if(middle_sum > 100):
         # print(f"tube {tube+1}: ORANGE ON")
         orange =  True
-    if(bottom_sum > 135):
+    if(bottom_sum > 100):
         # print(f"tube {tube+1}: GREEN ON")
         green = True
 
@@ -142,7 +147,7 @@ def classifyColor(image, tube):
         if orange and green:
             print(f"Tube {tube+1}: Waiting for USER Input")
         elif green and red:
-            print(f"Tube {tube+1}: Ready to load  wafers")
+            print(f"Tube {tube+1}: Waiting for USER Input")
         else:
             if red:
                 print(f"Tube {tube+1}: ERROR! CONTACT STAFF")
@@ -187,6 +192,7 @@ def capture1080p():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
+
     ret, frame = cap.read()
 
     if not ret:
@@ -214,6 +220,8 @@ def capture1080p():
 # configure_points()
 
 for x in range(1):
+    capture1080p()
+    capture1080p()
     capture1080p()
     for i in range(0, 12):
         croppedImg = cropStaticFurnaces("images/highres.jpg", i)
