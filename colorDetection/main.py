@@ -2,32 +2,52 @@ import cv2
 import numpy as np
 import os
 import time
+import cv2.aruco as aruco
 
 #lets try a dynamic cropping and fall into static cropping if it does not work too well
+
+def arucocap():
+    frame = cv2.imread("images/highres.jpg")
+
+    allowed_markers = {0, 1, 2}
+
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    parameters = cv2.aruco.DetectorParameters()
+    detector = cv2.aruco.ArucoDetector(dictionary, parameters)
+
+    markerCorners, markerIds, rejectedCandidates = detector.detectMarkers(frame)
+
+    reference_coord = {}
+
+    if markerIds is not None:
+        for id in markerIds:
+            if id[0] in allowed_markers:
+                print(f"markerId: {id[0]}")
+                corners = markerCorners[id[0]][0]
+                for j, (x, y) in enumerate(corners):
+                    if id[0] == 0 and j == 2:
+                        reference_coord[0] = [int(x), int(y)]
+                    elif id[0] == 1 and j == 2:
+                        reference_coord[1] = [int(x), int(y)]
+                    elif id[0] == 2 and j == 3:
+                        reference_coord[2] = [int(x), int(y)]
+                        
+            else:
+                print(f"ignoring marker: {id[0]}")
+        cv2.aruco.drawDetectedMarkers(frame, markerCorners, markerIds)
+
+    return reference_coord
+
 def cropStaticFurnaces(imagePath, tube):
     readImage = cv2.imread(imagePath)
-    dimensionArray = [
-    [285, 378, 25, 55],
-    [283, 500, 25, 55],
-    [284, 620, 25, 55],
-    [291, 732, 25, 55],
-    [904, 354, 25, 55],
-    [902, 485, 25, 55],
-    [904, 617, 25, 55],
-    [906, 750, 25, 55],
-    [1327, 354, 25, 55],
-    [1331, 484, 25, 55],
-    [1332, 606, 25, 55],
-    [1331, 736, 25, 55]
-    ] 
+    static_points = arucocap()
 
-
-    x, y, w, h = dimensionArray[tube][0], dimensionArray[tube][1], dimensionArray[tube][2], dimensionArray[tube][3]
-
+    print(static_points)
+    h = 55, w = 25
+    y, x = static_points[0][]
     cropped = readImage[y: y+h, x: x+w]
-    # cropped = mitigate_bleeding(cropped)
-    cv2.imwrite(f"preprocess/croppedimg{tube}.jpg",  cropped)
-    return cropped
+    # cv2.imwrite(f"preprocess/croppedimg{tube}.jpg",  cropped)
+    # return cropped
 
 #processes the image into black and white
 def detectLight(image, tube):
@@ -208,6 +228,8 @@ def capture1080p():
 
 
 
+
+
 # img = cv2.imread("images/stack.jpeg")
 # detectLight(img)
 # processedPath = "preprocess/processedImage.png"
@@ -219,18 +241,21 @@ def capture1080p():
 # capture1080p()
 # configure_points()
 
-for x in range(1):
-    capture1080p()
-    capture1080p()
-    capture1080p()
-    for i in range(0, 12):
-        croppedImg = cropStaticFurnaces("images/highres.jpg", i)
-        filePath = detectLight(croppedImg, i)
-        # filePath = f"preprocess/processedImage{i}.png"
-        classifyColor(filePath, i)
+# for x in range(1):
+#     capture1080p()
+#     capture1080p()
+#     capture1080p()
+#     for i in range(0, 12):
+#         croppedImg = cropStaticFurnaces("images/highres.jpg", i)
+#         filePath = detectLight(croppedImg, i)
+#         # filePath = f"preprocess/processedImage{i}.png"
+#         classifyColor(filePath, i)
     
-    time.sleep(5)
+#     time.sleep(5)
 
+capture1080p
+capture1080p()
+cropStaticFurnaces("images/highres.jpg",0)
 
 # for i in range(5):
 #     capture1080p(i)
