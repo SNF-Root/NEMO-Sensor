@@ -8,7 +8,6 @@ import cv2.aruco as aruco
 
 def arucocap():
     frame = cv2.imread("images/highres.jpg")
-
     allowed_markers = {0, 1, 2}
 
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -17,37 +16,59 @@ def arucocap():
 
     markerCorners, markerIds, rejectedCandidates = detector.detectMarkers(frame)
 
-    reference_coord = {}
+    position_list = []
 
     if markerIds is not None:
-        for id in markerIds:
-            if id[0] in allowed_markers:
-                print(f"markerId: {id[0]}")
-                corners = markerCorners[id[0]][0]
-                for j, (x, y) in enumerate(corners):
-                    if id[0] == 0 and j == 2:
-                        reference_coord[0] = [int(x), int(y)]
-                    elif id[0] == 1 and j == 2:
-                        reference_coord[1] = [int(x), int(y)]
-                    elif id[0] == 2 and j == 3:
-                        reference_coord[2] = [int(x), int(y)]
-                        
+        markerIds = markerIds.flatten()
+        print(f"Detected IDs: {markerIds}")
+
+        filteredCorners = []
+        filteredIds = []
+
+        for i, id in enumerate(markerIds):
+            if id in allowed_markers:
+                print(f"markerId: {id}")
+                filteredCorners.append(markerCorners[i])
+                filteredIds.append([id])
+
+
+                corner = markerCorners[i].reshape(-1, 2)[3]
+                position_list.append([int(corner[0]), int(corner[1])])
             else:
-                print(f"ignoring marker: {id[0]}")
-        cv2.aruco.drawDetectedMarkers(frame, markerCorners, markerIds)
+                print(f"Ignoring marker: {id}")
 
-    return reference_coord
+        if filteredCorners:
+            cv2.aruco.drawDetectedMarkers(frame, filteredCorners, np.array(filteredIds))
+        
+        position_list.sort()
 
-def cropStaticFurnaces(imagePath, tube):
+
+
+    return position_list
+
+def cropStaticFurnaces(static_points, imagePath, tube):
     readImage = cv2.imread(imagePath)
-    static_points = arucocap()
 
-    print(static_points)
-    h = 55, w = 25
-    y, x = static_points[0][]
+
+
+    fixed_points = [[static_points[0][0] + 32, static_points[0][1] + 45, 25, 55],
+                    [static_points[0][0] + 32, static_points[0][1] + 158, 25, 55],
+                    [static_points[0][0] + 32, static_points[0][1] + 286, 25, 55],
+                    [static_points[0][0] + 38, static_points[0][1] + 404, 25, 55],
+                    [static_points[1][0] + 56, static_points[1][1] + 54, 25, 55],
+                    [static_points[1][0] + 56, static_points[1][1] + 187, 25, 55],
+                    [static_points[1][0] + 59, static_points[1][1] + 317, 25, 55],
+                    [static_points[1][0] + 59, static_points[1][1] + 450, 25, 55],
+                    [static_points[2][0] - 12, static_points[2][1] + 42, 25, 55],
+                    [static_points[2][0] - 9, static_points[2][1] + 175, 25, 55],
+                    [static_points[2][0] - 9, static_points[2][1] + 303, 25, 55],
+                    [static_points[2][0] - 10, static_points[2][1] + 428, 25, 55]]
+
+    x, y, w, h = fixed_points[tube]
+
     cropped = readImage[y: y+h, x: x+w]
-    # cv2.imwrite(f"preprocess/croppedimg{tube}.jpg",  cropped)
-    # return cropped
+    cv2.imwrite(f"preprocess/croppedimg{tube}.jpg",  cropped)
+    return cropped
 
 #processes the image into black and white
 def detectLight(image, tube):
@@ -85,8 +106,6 @@ def detectLight(image, tube):
     return save_path
 
 
-    # cv2.imwrite(f"preprocess/processedImage{tube}.png", mask_combined)
-    # return f"preprocess/processedImage{tube}.png"
 
 
 
@@ -159,7 +178,7 @@ def classifyColor(image, tube):
         # print(f"tube {tube+1}: GREEN ON")
         green = True
 
-    # print(f"TUBE {tube + 1}: ", top_sum, middle_sum, bottom_sum)
+    print(f"TUBE {tube + 1}: ", top_sum, middle_sum, bottom_sum)
 
     if(not red and not orange and not green):
         print(f"tube {tube + 1}: VIEW OBSTRUCTED!")    
@@ -167,7 +186,7 @@ def classifyColor(image, tube):
         if orange and green:
             print(f"Tube {tube+1}: Waiting for USER Input")
         elif green and red:
-            print(f"Tube {tube+1}: Waiting for USER Input")
+            print(f"Tube {tube+1}: WAITING FOR WAFER LOAD")
         else:
             if red:
                 print(f"Tube {tube+1}: ERROR! CONTACT STAFF")
@@ -241,21 +260,30 @@ def capture1080p():
 # capture1080p()
 # configure_points()
 
-# for x in range(1):
-#     capture1080p()
-#     capture1080p()
-#     capture1080p()
-#     for i in range(0, 12):
-#         croppedImg = cropStaticFurnaces("images/highres.jpg", i)
-#         filePath = detectLight(croppedImg, i)
-#         # filePath = f"preprocess/processedImage{i}.png"
-#         classifyColor(filePath, i)
-    
-#     time.sleep(5)
 
-capture1080p
-capture1080p()
-cropStaticFurnaces("images/highres.jpg",0)
+
+
+
+while True:
+
+    capture1080p()
+    capture1080p()
+
+    static_points = arucocap()
+
+    for i in range(0, 12):
+        croppedImg = cropStaticFurnaces(static_points, "images/highres.jpg", i)
+        filePath = detectLight(croppedImg, i)
+        # filePath = f"preprocess/processedImage{i}.png"
+        classifyColor(filePath, i)
+
+    time.sleep(120)
+
+
+# capture1080p()
+# capture1080p()
+# for i in range(12):
+#     cropStaticFurnaces("images/highres.jpg", i)
 
 # for i in range(5):
 #     capture1080p(i)
