@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# MicroPython device path
+DEVICE="/dev/ttyUSB0"
+
+# File to upload (defaults to main.py)
+FILE="${1:-main.py}"
+
+if [ ! -f "$FILE" ]; then
+    echo "❌ File '$FILE' not found in current directory."
+    exit 1
+fi
+
+echo "📤 Uploading '$FILE' to MicroPython..."
+mpremote connect $DEVICE fs cp "$FILE" :
+
+echo "🔁 Rebooting device to run '$FILE'..."
+mpremote connect $DEVICE soft-reset
+
+# Optional: Open REPL afterward
+echo "💬 Opening REPL. Press Ctrl+D again to soft-reset if needed."
+mpremote connect $DEVICE repl
