@@ -1,10 +1,10 @@
 import network
 import time
 import urequests
-from machine import Pin, I2C
+import ntptime
+from machine import Pin, I2C, deepsleep
 from sht31 import SHT31
 from read_env import load_env
-import ntptime
 
 # Load .env variables
 config = load_env()
@@ -23,10 +23,19 @@ def connect_wifi():
     if not wlan.isconnected():
         print("Connecting to WiFi...")
         wlan.connect(SSID, PASSWORD)
-        while not wlan.isconnected():
+        timeout = 20
+        while not wlan.isconnected() and timeout > 0:
             time.sleep(0.5)
             print(".", end="")
-    print("\nConnected:", wlan.ifconfig())
+            timeout -= 1
+
+    ip = wlan.ifconfig()[0]
+    if ip == "0.0.0.0":
+        print("\n❌ Wi-Fi failed — no IP address assigned.")
+        return False
+
+    print("\n✅ Connected with IP:", ip)
+    return True
 
 def get_iso_timestamp():
     t = time.localtime()
@@ -35,10 +44,10 @@ def get_iso_timestamp():
 def post_sensor_data(sensor_id, value):
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': f'Token {AUTH_TOKEN}'
+        'Authorization': f'Token {AUTH_TOKEN}',
     }
     data = {
-        'value': round(value, 2),
+        'value': round(value, 1),
         'sensor': sensor_id,
         'created_date': get_iso_timestamp()
     }
@@ -59,15 +68,19 @@ def main():
     except Exception as e:
         print("NTP sync failed:", e)
 
-    while True:
-        try:
-            temp, hum = sht.get_temp_humi()
-            if temp is not None:
-                post_sensor_data(5, temp)
-            if hum is not None:
-                post_sensor_data(7, hum)
-        except Exception as e:
-            print("Sensor error:", e)
-        time.sleep(10)
+    try:
+        temp, hum = sht.get_temp_humi()
+        if temp is not None:
+            post_sensor_data(5, temp)
+            time.sleep(0.5)  # short delay to stabilize socket
+        if hum is not None:
+            post_sensor_data(7, hum)
+
+    except Exception as e:
+        print("Sensor error:", e)
+
+    print("Going to deep sleep for 5 minutes...")
+    time.sleep(1)
+    deepsleep(300000)  # sleep for 60,000 ms (1 minute)
 
 main()
