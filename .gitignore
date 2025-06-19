@@ -10,3 +10,6 @@ sensor_data.json
 
 # Ignore compiled python files
 venv/
+
+# Ignore esp32 firmware
+ESP32_GENERIC*.bin
