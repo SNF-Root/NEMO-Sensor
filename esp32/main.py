@@ -18,7 +18,7 @@ AUTH_TOKEN = config.get("AUTH_TOKEN")
 # i2c = I2C(0, scl=Pin(22), sda=Pin(21))
 # sht = SHT31(i2c)
 
-# MQ135
+# Initialize MQ135
 mq135 = MQ135(34)
 
 def connect_wifi():
@@ -84,12 +84,22 @@ def main():
 
     if mq135.r_zero is None:
         print("First run: calibrating...")
-        mq135.calibrate()
+        mq135.calibrate() 
+        
+        # ^ This is assuming it is calibrated in FRESH OUTDOOR AIR for
+        #   reasonable values. Otherwise, ppm is just relative (rise and fall trends)
+
+        try:
+            ppm = mq135.get_ppm()
+            print("CO₂ PPM:", ppm)
+            post_sensor_data(8, ppm)
+        except Exception as e:
+            print("MQ135 read error:", e)
     else:
         try:
             ppm = mq135.get_ppm()
             print("CO₂ PPM:", ppm)
-            post_sensor_data(9, ppm)
+            post_sensor_data(8, ppm)
         except Exception as e:
             print("MQ135 read error:", e)
 
