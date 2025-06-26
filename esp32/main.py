@@ -87,7 +87,7 @@ def main():
         mq135.calibrate() 
         
         # ^ This is assuming it is calibrated in FRESH OUTDOOR AIR for
-        #   reasonable values. Otherwise, ppm is just relative (rise and fall trends)
+        #   reasonable abovalues. Otherwise, ppm is just relative (rise and fall trends)
 
         try:
             ppm = mq135.get_ppm()
