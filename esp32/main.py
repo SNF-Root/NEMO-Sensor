@@ -14,9 +14,22 @@ PASSWORD = config.get("PASSWORD")
 API_URL = config.get("API_URL")
 AUTH_TOKEN = config.get("AUTH_TOKEN")
 
-# Initialize I2C and SHT31
-# i2c = I2C(0, scl=Pin(22), sda=Pin(21))
-# sht = SHT31(i2c)
+# Initialize I2C
+i2c = I2C(0, scl=Pin(22), sda=Pin(21))
+
+# Detect and initialize SHT31 if present
+sht = None
+try:
+    devices = i2c.scan()
+    if 0x44 in devices:  # default I2C address of SHT31
+        sht = SHT31(i2c)
+        print("✅ SHT31 detected and initialized.")
+    else:
+        print("⚠️ SHT31 not detected — skipping temperature/humidity reading.")
+except Exception as e:
+    print("I2C error during SHT31 detection:", e)
+    sht = None
+
 
 # Initialize MQ135
 mq135 = MQ135(34)
@@ -45,7 +58,7 @@ def get_iso_timestamp():
     t = time.localtime()
     return "{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z".format(*t[:6])
 
-def post_sensor_data(sensor_id, value):
+def post_sensor_data(sensor_id, value, max_retries=3, delay=2):
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Token {AUTH_TOKEN}'
@@ -55,13 +68,24 @@ def post_sensor_data(sensor_id, value):
         'sensor': sensor_id,
         'created_date': get_iso_timestamp()
     }
-    try:
-        print("Posting:", data)
-        response = urequests.post(API_URL, headers=headers, json=data)
-        print("Response:", response.status_code)
-        response.close()
-    except Exception as e:
-        print("Error posting data:", e)
+
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            print(f"Posting attempt {attempt + 1}:", data)
+            response = urequests.post(API_URL, headers=headers, json=data)
+            print("Response:", response.status_code)
+            response.close()
+            return  # Exit on success
+        except Exception as e:
+            print(f"Post failed on attempt {attempt + 1}: {e}")
+            attempt += 1
+            if attempt < max_retries:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print("❌ Failed to post after retries.")
+
 
 def main():
     connect_wifi()
@@ -87,7 +111,7 @@ def main():
         mq135.calibrate() 
         
         # ^ This is assuming it is calibrated in FRESH OUTDOOR AIR for
-        #   reasonable abovalues. Otherwise, ppm is just relative (rise and fall trends)
+        #   reasonable values. Otherwise, ppm is just relative (rise and fall trends)
 
         try:
             ppm = mq135.get_ppm()
