@@ -96,41 +96,39 @@ def main():
     except Exception as e:
         print("NTP sync failed:", e)
 
-    # try:
-    #     temp, hum = sht.get_temp_humi()
-    #     if temp is not None:
-    #         post_sensor_data(5, temp)
-    #         time.sleep(0.5)  # short delay to stabilize socket
-    #     if hum is not None:
-    #         post_sensor_data(7, hum)
-    # except Exception as e:
-    #     print("SHT31 error:", e)
+    if sht:
+        try:
+            temp, hum = sht.get_temp_humi()
+            if temp is not None:
+                post_sensor_data(5, temp)
+                time.sleep(0.5)
+            if hum is not None:
+                post_sensor_data(7, hum)
+        except Exception as e:
+            print("SHT31 read error:", e)
 
     if mq135.r_zero is None:
         print("First run: calibrating...")
-        mq135.calibrate() 
-        
+        mq135.calibrate()  
         # ^ This is assuming it is calibrated in FRESH OUTDOOR AIR for
         #   reasonable values. Otherwise, ppm is just relative (rise and fall trends)
-
-        try:
-            ppm = mq135.get_ppm()
-            print("CO₂ PPM:", ppm)
-            post_sensor_data(8, ppm)
-        except Exception as e:
-            print("MQ135 read error:", e)
     else:
         try:
+            mq135 = MQ135(34)
+            rs = mq135.get_resistance()
+            if rs <= 0 or rs > 100000:  # Optional: reject nonsense readings
+                raise ValueError("MQ135 not responding (invalid resistance)")
+            
             ppm = mq135.get_ppm()
             print("CO₂ PPM:", ppm)
-            post_sensor_data(8, ppm)
+            post_sensor_data(9, ppm)
         except Exception as e:
-            print("MQ135 read error:", e)
-
+            print("⚠️ Skipping MQ135 —", e)
 
 
     print("Going to deep sleep for 5 minutes...")
     time.sleep(1)
-    deepsleep(300000)  # sleep time in ms (60,000 ms = 1 minute)
+    deepsleep(60000)  # sleep time in ms (60,000 ms = 1 minute)
+    # Using 60,000 for testing, but production will be closer to 15-20 minutes.
 
 main()
