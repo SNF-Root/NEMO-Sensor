@@ -6,6 +6,7 @@ from machine import Pin, I2C, deepsleep
 from sht31 import SHT31
 from read_env import load_env
 from mq135 import MQ135
+from w104 import W104
 
 # Load .env variables
 config = load_env()
@@ -30,9 +31,12 @@ except Exception as e:
     print("I2C error during SHT31 detection:", e)
     sht = None
 
-
 # Initialize MQ135
-mq135 = MQ135(34)
+mq135 = MQ135(35)
+
+# Initialize W104 sound sensor
+sound = W104(pin=34)
+
 
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
@@ -88,6 +92,8 @@ def post_sensor_data(sensor_id, value, max_retries=3, delay=2):
 
 
 def main():
+    global sht
+
     connect_wifi()
 
     try:
@@ -114,7 +120,6 @@ def main():
         #   reasonable values. Otherwise, ppm is just relative (rise and fall trends)
     else:
         try:
-            mq135 = MQ135(34)
             rs = mq135.get_resistance()
             if rs <= 0 or rs > 100000:  # Optional: reject nonsense readings
                 raise ValueError("MQ135 not responding (invalid resistance)")
@@ -125,6 +130,15 @@ def main():
         except Exception as e:
             print("⚠️ Skipping MQ135 —", e)
 
+    try:
+        val = sound.adc.read()
+        print("ADC single read:", val)
+
+        db = sound.read_db()
+        print("Sound level:", db, "dB")
+        post_sensor_data(11, db)  # Replace 11 with your W104 sensor ID
+    except Exception as e:
+        print("⚠️ Sound read error:", e)
 
     print("Going to deep sleep for 5 minutes...")
     time.sleep(1)
