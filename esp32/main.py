@@ -131,12 +131,12 @@ def main():
             print("⚠️ Skipping MQ135 —", e)
 
     try:
-        val = sound.adc.read()
-        print("ADC single read:", val)
-
         db = sound.read_db()
-        print("Sound level:", db, "dB")
-        post_sensor_data(11, db)  # Replace 11 with your W104 sensor ID
+        if db is not None:
+            print("Sound level:", db, "dB")
+            post_sensor_data(11, db)  # replace with your actual sensor ID
+        else:
+            print("🔇 Sound level too low — skipping")
     except Exception as e:
         print("⚠️ Sound read error:", e)
 
