@@ -8,12 +8,22 @@ from read_env import load_env
 from mq135 import MQ135
 from w104 import W104
 
+version = "1.0.0"
+print(f"NEMO Sensor V{version}")
+# Change version number upon appropriate updates
+
 # Load .env variables
 config = load_env()
 SSID = config.get("SSID")
 PASSWORD = config.get("PASSWORD")
 API_URL = config.get("API_URL")
 AUTH_TOKEN = config.get("AUTH_TOKEN")
+GAS_PIN = int(config.get("MQ135_PIN"))
+SOUND_PIN = int(config.get("W104_PIN"))
+TEMP_ID = int(config.get("SHT31_TEMP_ID"))
+HUMD_ID = int(config.get("SHT31_HUMD_ID"))
+SOUND_ID = int(config.get("W104_ID"))
+GAS_ID = int(config.get("MQ135_ID"))
 
 # Initialize I2C
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
@@ -32,10 +42,10 @@ except Exception as e:
     sht = None
 
 # Initialize MQ135
-mq135 = MQ135(35)
+mq135 = MQ135(GAS_PIN)
 
 # Initialize W104 sound sensor
-sound = W104(pin=34)
+sound = W104(pin=SOUND_PIN)
 
 
 def connect_wifi():
@@ -106,10 +116,10 @@ def main():
         try:
             temp, hum = sht.get_temp_humi()
             if temp is not None:
-                post_sensor_data(5, temp)
+                post_sensor_data(TEMP_ID, temp)
                 time.sleep(0.5)
             if hum is not None:
-                post_sensor_data(7, hum)
+                post_sensor_data(HUMD_ID, hum)
         except Exception as e:
             print("SHT31 read error:", e)
 
@@ -126,7 +136,7 @@ def main():
             
             ppm = mq135.get_ppm()
             print("CO₂ PPM:", ppm)
-            post_sensor_data(9, ppm)
+            post_sensor_data(GAS_ID, ppm)
         except Exception as e:
             print("⚠️ Skipping MQ135 —", e)
 
@@ -134,15 +144,15 @@ def main():
         db = sound.read_db()
         if db is not None:
             print("Sound level:", db, "dB")
-            post_sensor_data(11, db)  # replace with your actual sensor ID
+            post_sensor_data(SOUND_ID, db)  # replace with your actual sensor ID
         else:
             print("🔇 Sound level too low — skipping")
     except Exception as e:
         print("⚠️ Sound read error:", e)
 
-    print("Going to deep sleep for 5 minutes...")
+    print("Going to deep sleep for 15 minutes...")
     time.sleep(1)
-    deepsleep(60000)  # sleep time in ms (60,000 ms = 1 minute)
+    deepsleep(900000)  # sleep time in ms (60,000 ms = 1 minute)
     # Using 60,000 for testing, but production will be closer to 15-20 minutes.
 
 main()
