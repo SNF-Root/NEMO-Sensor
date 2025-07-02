@@ -8,9 +8,12 @@ from read_env import load_env
 from mq135 import MQ135
 from w104 import W104
 
-version = "1.0.0"
+# Solid blue LED to indicate startup
+LED = Pin(2, Pin.OUT)
+LED.on()
+
+version = "1.0.0" # Change version number upon appropriate updates
 print(f"NEMO Sensor V{version}")
-# Change version number upon appropriate updates
 
 # Load .env variables
 config = load_env()
@@ -24,6 +27,7 @@ TEMP_ID = int(config.get("SHT31_TEMP_ID"))
 HUMD_ID = int(config.get("SHT31_HUMD_ID"))
 SOUND_ID = int(config.get("W104_ID"))
 GAS_ID = int(config.get("MQ135_ID"))
+SLEEP_TIME=int(config.get("SLEEP_TIME_IN_MS"))
 
 # Initialize I2C
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
@@ -51,22 +55,29 @@ sound = W104(pin=SOUND_PIN)
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
+
     if not wlan.isconnected():
         print("Connecting to WiFi...")
         wlan.connect(SSID, PASSWORD)
         timeout = 20
         while not wlan.isconnected() and timeout > 0:
-            time.sleep(0.5)
-            print(".", end="")
+            LED.off()
+            time.sleep(0.2)
+            LED.on()
+            time.sleep(0.3)
             timeout -= 1
 
     ip = wlan.ifconfig()[0]
     if ip == "0.0.0.0":
         print("\n❌ Wi-Fi failed — no IP address assigned.")
+        for _ in range(3):  # Blink for failure
+            LED.on(); time.sleep(0.3); LED.off(); time.sleep(0.3)
         return False
 
     print("\n✅ Connected with IP:", ip)
+    LED.on()  # Solid ON again after connection
     return True
+
 
 def get_iso_timestamp():
     t = time.localtime()
@@ -90,7 +101,9 @@ def post_sensor_data(sensor_id, value, max_retries=3, delay=2):
             response = urequests.post(API_URL, headers=headers, json=data)
             print("Response:", response.status_code)
             response.close()
-            return  # Exit on success
+            # Pulse LED briefly to indicate success
+            LED.off(); time.sleep(0.1); LED.on()
+            return
         except Exception as e:
             print(f"Post failed on attempt {attempt + 1}: {e}")
             attempt += 1
@@ -150,9 +163,10 @@ def main():
     except Exception as e:
         print("⚠️ Sound read error:", e)
 
-    print("Going to deep sleep for 15 minutes...")
+    print(f"Going to deep sleep for {SLEEP_TIME/60000} minutes...")
+    LED.off()
     time.sleep(1)
-    deepsleep(900000)  # sleep time in ms (60,000 ms = 1 minute)
+    deepsleep(SLEEP_TIME)  # sleep time in ms (60,000 ms = 1 minute)
     # Using 60,000 for testing, but production will be closer to 15-20 minutes.
 
 main()
