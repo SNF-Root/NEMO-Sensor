@@ -12,8 +12,8 @@ from w104 import W104
 LED = Pin(2, Pin.OUT)
 LED.on()
 
-version = "1.0.0" # Change version number upon appropriate updates
-print(f"NEMO Sensor V{version}")
+version = "1.1.0" # Change version number upon appropriate updates
+print(f"NEMO Sensor v{version}")
 
 # Load .env variables
 config = load_env()
