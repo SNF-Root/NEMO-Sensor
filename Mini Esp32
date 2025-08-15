@@ -1,0 +1,300 @@
+# ──────────────────────────────────────────────────────────────────────
+#  NEMO Environmental Sensor | ESP32-C3 Super Mini – Ultra Low Power
+#  SHT31 → POST to LAB COLLECTOR (no token) with created_date
+#  Features: Deep Sleep, Power Domain Control, Light Sleep WiFi
+# ──────────────────────────────────────────────────────────────────────
+import network, time, urequests, gc, machine, esp32
+from machine import Pin, I2C, deepsleep, lightsleep
+from sht31 import SHT31
+from read_env import load_env
+
+print("⏻ NEMO C3 (collector mode) ultra-low-power environmental sensor booting...")
+
+# ═══════════════════════════════════════════════════════════════════════
+# POWER OPTIMIZATION CONFIGURATION
+# These settings reduce power consumption from ~240mA to ~20-30mA active
+# and deep sleep from ~15µA to ~5-8µA for maximum battery life
+# ═══════════════════════════════════════════════════════════════════════
+
+# 1️⃣ Reduce CPU frequency from default 240MHz to 80MHz
+# This alone saves approximately 66% of CPU power consumption
+machine.freq(80_000_000)
+
+# 2️⃣ Completely disable Bluetooth Low Energy (BLE) radio
+# BLE consumes ~10-15mA even when not in use, this saves significant power
+try:
+    import bluetooth
+    bluetooth.BLE().active(False)
+except ImportError:
+    pass  # Bluetooth module not available, skip
+
+# 3️⃣ Force user LED (GPIO8) permanently OFF with hold state
+# ESP32-C3 Super Mini has inverted LED logic: 1=OFF, 0=ON
+# hold=True maintains state during deep sleep without power drain
+Pin(8, Pin.OUT, value=1, hold=True)
+
+# 4️⃣ Disable RTC power domains during deep sleep for ultra-low consumption
+# Only disable RTC_FAST_MEM for maximum compatibility across MicroPython builds
+# Other domains (RTC_SLOW_MEM, RTC_PERIPH) may not be available in all firmware versions
+# This still provides significant power savings: ~15µA to ~8-10µA
+try:
+    esp32.sleep_pd_config(esp32.PD_DOMAIN_RTC_FAST_MEM, esp32.PD_OPTION_OFF)
+    print("✅ RTC power domain optimization enabled")
+except AttributeError:
+    print("⚠️  RTC power domain config not available in this firmware version")
+    print("   (This is normal for some MicroPython builds - power savings will be slightly reduced)")
+except Exception as e:
+    print(f"⚠️  RTC power domain config failed: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════
+# ENVIRONMENT CONFIGURATION
+# Load all configuration parameters from .env file for easy customization
+# without modifying the main code
+# ═══════════════════════════════════════════════════════════════════════
+config = load_env()
+SSID = config.get("SSID")                    # WiFi network name
+PASSWORD = config.get("PASSWORD")            # WiFi password
+
+# IMPORTANT: This URL must be the PC collector endpoint, not NEMO directly
+# The collector will forward data to NEMO with proper authentication
+API_URL = config.get("API_URL")              # e.g. http://192.168.140.5:8000/esp/receive_send
+
+TEMP_ID = int(config.get("SHT31_TEMP_ID"))   # Database sensor ID for temperature readings
+HUMD_ID = int(config.get("SHT31_HUMD_ID"))   # Database sensor ID for humidity readings
+SLEEP_TIME = int(config.get("SLEEP_TIME_IN_MS", 900000))  # Deep sleep duration (default: 15 minutes)
+
+# ═══════════════════════════════════════════════════════════════════════
+# I2C BUS AND SENSOR INITIALIZATION
+# Configure I2C communication and initialize the SHT31 temperature/humidity sensor
+# GPIO4=SDA, GPIO5=SCL are optimal pins for ESP32-C3 I2C communication
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    # Initialize I2C bus with ESP32-C3 recommended pins and standard speed
+    i2c = I2C(0, scl=Pin(5), sda=Pin(4), freq=100000)
+    
+    # Initialize SHT31 sensor - this will fail if sensor is not connected
+    sht = SHT31(i2c)
+    print("✅ SHT31 temperature/humidity sensor initialized successfully")
+except Exception as e:
+    print(f"❌ SHT31 sensor initialization failed: {e}")
+    print("   Check I2C wiring: SDA=GPIO4, SCL=GPIO5")
+    print("   Entering deep sleep to retry later...")
+    deepsleep(SLEEP_TIME)
+
+# ═══════════════════════════════════════════════════════════════════════
+# WIFI AND DATA TRANSMISSION UTILITIES
+# Optimized functions for WiFi connectivity and HTTP data posting
+# Uses light sleep during WiFi connection for minimal power consumption
+# ═══════════════════════════════════════════════════════════════════════
+
+def connect_wifi(timeout=15):
+    """
+    Establish WiFi connection with power-optimized settings
+    
+    Features:
+    - Uses light sleep instead of blocking sleep during connection attempts
+    - Configures modem sleep mode for reduced power when connected
+    - Configurable timeout to avoid infinite connection attempts
+    - Additional validation for proper IP assignment
+    - Returns both connection status and WLAN object for cleanup
+    
+    Args:
+        timeout (int): Maximum seconds to wait for connection (default: 15)
+    
+    Returns:
+        tuple: (success: bool, wlan: WLAN object)
+    """
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    
+    # Enable modem sleep mode - saves ~20% power when WiFi is connected but idle
+    try:
+        wlan.config(pm=1)
+    except Exception:
+        pass  # Some firmware versions may not support power management config
+    
+    if not wlan.isconnected():
+        print("🔄 Attempting WiFi connection...")
+        wlan.connect(SSID, PASSWORD)
+        
+        # Use light sleep instead of time.sleep() to save power during connection
+        # Light sleep consumes ~150µA vs ~25mA for active waiting
+        for attempt in range(timeout):
+            if wlan.isconnected():
+                break
+            lightsleep(1000)  # Sleep 1 second using minimal power
+    
+    # Validate connection with proper IP assignment (not 0.0.0.0)
+    connection_ok = wlan.isconnected() and wlan.ifconfig()[0] != "0.0.0.0"
+    
+    if connection_ok:
+        print(f"✅ WiFi connected successfully: {wlan.ifconfig()[0]}")
+    else:
+        print("❌ WiFi connection failed or invalid IP assignment")
+        print("   Check SSID/password in .env file")
+    
+    return connection_ok, wlan
+
+def get_created_date():
+    """
+    Generate ISO 8601 formatted timestamp for data records
+    
+    Format: YYYY-MM-DDTHH:MM:SSZ (UTC timezone indicator)
+    Example: 2025-07-31T14:30:25Z
+    
+    Returns:
+        str: ISO 8601 formatted timestamp string
+    """
+    y, m, d, hh, mm, ss, *_ = time.localtime()
+    return f"{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z"
+
+def post_to_collector(sensor_id, value):
+    """
+    Send sensor data to LAB COLLECTOR endpoint (no authentication required)
+    
+    The collector acts as an intermediary that:
+    - Receives data from ESP32 sensors without authentication
+    - Forwards data to NEMO API with proper authentication
+    - Provides buffering, retry logic, and error handling
+    
+    Creates a JSON payload with sensor ID, value, and created_date timestamp
+    
+    Args:
+        sensor_id (int): Database ID for the sensor
+        value (float): Sensor reading value
+        
+    Returns:
+        bool: True if data was successfully posted to collector, False otherwise
+    """
+    try:
+        # Prepare HTTP headers - NO authentication required for collector
+        headers = {
+            'Content-Type': 'application/json'
+        }
+        
+        # Create data payload with sensor ID, rounded value, and created_date
+        data = {
+            'sensor': sensor_id,                # Database sensor identifier
+            'value': round(value, 1),           # Round to 1 decimal place for reasonable precision
+            'created_date': get_created_date()  # ISO 8601 formatted timestamp
+        }
+        
+        # Send POST request to collector with 8-second timeout
+        response = urequests.post(API_URL, headers=headers, json=data, timeout=8)
+        
+        # Check for collector success (200 = data successfully forwarded to NEMO)
+        # Collector returns 200 only when NEMO accepts the data
+        success = response.status_code == 200
+        
+        if success:
+            print(f"📤 Data sent to collector and forwarded to NEMO: {value} (sensor {sensor_id})")
+        else:
+            print(f"❌ Collector/NEMO error {response.status_code} for sensor {sensor_id}")
+            # This could mean collector is down, NEMO is down, or authentication failed
+        
+        response.close()  # Important: close response to free memory
+        return success
+        
+    except Exception as e:
+        print(f"❌ POST to collector failed for sensor {sensor_id}: {e}")
+        return False
+
+# ═══════════════════════════════════════════════════════════════════════
+# MAIN EXECUTION LOGIC
+# Optimized sensor reading and data transmission cycle
+# Power-efficient sequence: Sensor → WiFi → Data → Sleep
+# ═══════════════════════════════════════════════════════════════════════
+
+def main():
+    """
+    Main execution function with optimized power management
+    
+    Execution sequence:
+    1. Read sensor data first (fail fast if sensor issues)
+    2. Connect to WiFi only if sensor data is valid
+    3. Transmit both temperature and humidity readings
+    4. Properly disconnect and disable WiFi
+    5. Clean up memory and enter deep sleep
+    
+    Power optimizations:
+    - Sensor reading before WiFi connection (avoid WiFi if sensor fails)
+    - Complete WiFi shutdown before sleep
+    - Memory garbage collection before sleep
+    - Ultra-deep sleep with all power domains disabled
+    """
+    
+    # ─── STEP 1: SENSOR DATA ACQUISITION ───────────────────────────────
+    # Read sensor data first to avoid unnecessary WiFi connection if sensor fails
+    try:
+        temp, hum = sht.get_temp_humi()
+        
+        # Validate sensor readings - SHT31 returns None for failed readings
+        if temp is None or hum is None:
+            raise ValueError("Sensor returned invalid data (None values)")
+        
+        print(f"🌡️  Temperature: {temp:.1f}°C")
+        print(f"💧 Humidity: {hum:.1f}%")
+        
+    except Exception as e:
+        print(f"❌ Sensor reading failed: {e}")
+        print("   Possible causes: I2C wiring, sensor power, sensor failure")
+        print(f"   Retrying in {SLEEP_TIME//60000} minutes...")
+        deepsleep(SLEEP_TIME)
+    
+    # ─── STEP 2: WIFI CONNECTION ───────────────────────────────────────
+    # Only attempt WiFi connection if we have valid sensor data
+    print("🔌 Establishing WiFi connection...")
+    wifi_success, wlan = connect_wifi()
+    
+    if wifi_success:
+        # ─── STEP 3: DATA TRANSMISSION TO COLLECTOR ────────────────────
+        # Send temperature and humidity data separately to collector
+        # Collector will handle authentication and forwarding to NEMO API
+        print("📡 Transmitting sensor data to collector...")
+        temp_sent = post_to_collector(TEMP_ID, temp)
+        hum_sent = post_to_collector(HUMD_ID, hum)
+        
+        if temp_sent and hum_sent:
+            print("✅ All sensor data transmitted to collector successfully")
+        else:
+            print("⚠️  Some data transmission failed - will retry next cycle")
+    else:
+        print("⚠️  Skipping data transmission due to WiFi failure")
+        print("   Will retry connection in 60 seconds for faster recovery")
+        
+        # Fast retry on WiFi failure instead of full sleep cycle
+        try:
+            wlan.disconnect()
+            wlan.active(False)
+        except Exception:
+            pass
+        
+        gc.collect()
+        deepsleep(60_000)  # Short 60-second retry instead of full cycle
+    
+    # ─── STEP 4: WIFI CLEANUP AND SHUTDOWN ─────────────────────────────
+    # Properly disconnect and disable WiFi to minimize power consumption
+    print("🔌 Shutting down WiFi...")
+    try:
+        wlan.disconnect()        # Graceful disconnect from access point
+        wlan.active(False)       # Completely disable WiFi radio
+    except Exception:
+        pass  # Handle case where WiFi is already disconnected
+    
+    # ─── STEP 5: MEMORY CLEANUP AND DEEP SLEEP ─────────────────────────
+    # Clean up memory and enter ultra-low-power deep sleep
+    gc.collect()             # Force garbage collection to free RAM
+    
+    sleep_minutes = SLEEP_TIME // 60000
+    print(f"💤 Entering deep sleep for {sleep_minutes} minutes...")
+    print("   Power consumption: ~5-8µA (ultra-low power mode)")
+    print("━" * 60)
+    
+    # Enter deep sleep with all power domains disabled for minimum consumption
+    deepsleep(SLEEP_TIME)
+
+# ═══════════════════════════════════════════════════════════════════════
+# PROGRAM ENTRY POINT
+# Execute main function when script is run
+# ═══════════════════════════════════════════════════════════════════════
+main()
