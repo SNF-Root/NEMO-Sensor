@@ -1,0 +1,155 @@
+# ──────────────────────────────────────────────────────────────────────
+#  NEMO Environmental Sensor - XIAO ESP32-C3 @ 80MHz
+#  Read SHT31, send to collector, enter deep sleep. Restart on wake.
+# ──────────────────────────────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════════════
+# Debug flags - Set to True for development
+# ═══════════════════════════════════════════════════════════════════════
+DEBUG_BOOT_WINDOW = False
+
+import network, time, machine, gc, urequests, ujson
+from machine import Pin, I2C
+from read_env import load_env
+
+print("🌡️ NEMO Environmental Sensor - XIAO ESP32-C3 (80MHz)")
+print("=" * 55)
+
+# Debug window - Press Ctrl+C to interrupt (only if enabled)
+if DEBUG_BOOT_WINDOW:
+    print("🐛 Press Ctrl+C within 3 seconds to enter interactive mode...")
+    for i in range(3, 0, -1):
+        print(f"   Starting in {i} seconds...")
+        time.sleep(1)
+    print("🚀 Starting main execution...")
+
+# ═══════════════════════════════════════════════════════════════════════
+# Configuration from config.env file
+# ═══════════════════════════════════════════════════════════════════════
+cfg = load_env("config.env")
+
+SSID = cfg.get("SSID", "")
+PASSWORD = cfg.get("PASSWORD", "")
+COLLECTOR_URL = cfg.get("API_URL", "")
+
+def to_int_safe(x, default=0):
+    """Safely convert to int with fallback"""
+    try: return int(x)
+    except: return default
+
+SHT31_TEMP_ID = to_int_safe(cfg.get("SHT31_TEMP_ID", "0"))
+SHT31_HUMD_ID = to_int_safe(cfg.get("SHT31_HUMD_ID", "0"))
+SLEEP_TIME = to_int_safe(cfg.get("SLEEP_TIME_IN_MS", "900000"))  # milliseconds
+
+# Set CPU to 80MHz for stable operation and less power consumption
+try:
+    machine.freq(80_000_000)
+except: pass
+print(f"⚡ CPU frequency: {machine.freq()//1_000_000} MHz")
+
+# I2C configuration for XIAO ESP32-C3 (SDA=GPIO6, SCL=GPIO7)
+i2c = I2C(0, scl=Pin(7), sda=Pin(6), freq=100000)
+
+def get_created_date():
+    y,m,d,hh,mm,ss,*_ = time.localtime()
+    return f"{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z"
+
+def read_sht31():
+    """Read SHT31 sensor with driver fallback to basic I2C"""
+    # Try using SHT31 driver first
+    try:
+        from sht31 import SHT31
+        sensor = SHT31(i2c, clock_stretching=True)
+        try:
+            t,h = sensor.get_temp_humi(retries=3)
+        except TypeError:
+            t,h = sensor.get_temp_humi()
+        if t is not None and h is not None:
+            return float(t), float(h), True
+    except: pass
+    
+    # Fallback to basic I2C communication
+    try:
+        i2c.writeto(0x44, b'\x2c\x06')  # High repeatability measurement
+        time.sleep_ms(15)
+        data = i2c.readfrom(0x44, 6)
+        tr = (data[0]<<8)|data[1]
+        hr = (data[3]<<8)|data[4]
+        t = -45 + (175*tr/65535)
+        h = max(0,min(100,100*hr/65535))
+        return round(t,2), round(h,1), True
+    except: 
+        return None, None, False
+
+def wifi_connect():
+    """Connect to WiFi with timeout"""
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    print(f"📶 Connecting to WiFi: {SSID}")
+    wlan.connect(SSID, PASSWORD)
+    for i in range(20):
+        if wlan.isconnected():
+            print(f"✅ WiFi connected: {wlan.ifconfig()[0]}")
+            return wlan
+        time.sleep(1)
+    print("❌ WiFi connection failed")
+    return None
+
+def post_point(sensor_id, value, created_date):
+    """Send sensor data to collector API"""
+    try:
+        payload = {"sensor": int(sensor_id),
+                   "value": float(value),
+                   "created_date": created_date}
+        r = urequests.post(COLLECTOR_URL,
+                           headers={'Content-Type':'application/json'},
+                           data=ujson.dumps(payload),
+                           timeout=10)
+        ok = 200 <= r.status_code < 300
+        status = "✅" if ok else "❌"
+        print(f"{status} Sensor {sensor_id}: {value} → {r.status_code}")
+        r.close()
+        return ok
+    except Exception as e:
+        print(f"❌ POST error: {e}")
+        return False
+
+def main():
+    # Validate configuration
+    if not all([SSID, COLLECTOR_URL, SHT31_TEMP_ID]):
+        print("❌ Incomplete config:")
+        print(f"   SSID: {bool(SSID)}, URL: {bool(COLLECTOR_URL)}, TEMP_ID: {bool(SHT31_TEMP_ID)}")
+        machine.deepsleep(SLEEP_TIME)
+
+    # Connect to WiFi
+    wlan = wifi_connect()
+    if not wlan:
+        print("❌ WiFi failed → fast sleep")
+        machine.deepsleep(min(SLEEP_TIME, 60_000))
+
+    # Read sensor data
+    temp, hum, ok = read_sht31()
+    if not ok:
+        print("❌ SHT31 sensor failed → sleep")
+        wlan.disconnect(); wlan.active(False)
+        machine.deepsleep(SLEEP_TIME)
+
+    print(f"🌡️  Temperature: {temp}°C")
+    print(f"💧 Humidity: {hum}%RH")
+
+    # Send data to collector
+    ts = get_created_date()
+    ok_t = post_point(SHT31_TEMP_ID, temp, ts)
+    ok_h = True
+    if SHT31_HUMD_ID:
+        ok_h = post_point(SHT31_HUMD_ID, hum, ts)
+
+    # Cleanup and sleep
+    print(f"📊 Results - Temp: {'✅' if ok_t else '❌'}, Hum: {'✅' if ok_h else '❌'}")
+    wlan.disconnect(); wlan.active(False)
+    gc.collect()
+    print(f"💤 Deep sleep for {SLEEP_TIME//1000} seconds")
+    machine.deepsleep(SLEEP_TIME)
+
+if __name__ == "__main__":
+    main()
