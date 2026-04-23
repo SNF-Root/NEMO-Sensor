@@ -132,7 +132,7 @@ SLEEP_TIME_IN_MS=900000
 
 ### ⚠️ Important: Uploading Code to a Sleeping Board
 
-Once `main.py` is on the device, the board will immediately run it on every boot — which means it will read the sensor, post data, and enter deep sleep within seconds. **Do not try to race the board to upload new code before it sleeps.** It is a microcontroller and will win every time.
+Once `main.py` is on the device, the board will immediately run it on every boot — which means it will read the sensor, post data, and enter deep sleep within seconds. **Do not try to race the board to upload new code before it sleeps.**
 
 If you need to upload updated code to a board that already has `main.py` on it, the correct approach is:
 
