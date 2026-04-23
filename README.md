@@ -19,7 +19,7 @@
 
 ## Overview
 
-Commercial environmental sensors are expensive (~$50–80/unit) and typically rely on proprietary cloud ecosystems that can't integrate with custom platforms. This project builds a low-cost alternative at **~$10–14 per node** using a **Seeed XIAO ESP32-C3** and a **GY-SHT31-D** temperature & humidity sensor, housed in a custom 3D-printed enclosure with USB-C charging.
+Commercial environmental sensors are expensive (~$50–80/unit) and typically rely on proprietary cloud ecosystems that can't integrate with custom platforms. This project builds a low-cost alternative at **$10–14 per node** using a **Seeed XIAO ESP32-C3** and a **GY-SHT31-D** temperature & humidity sensor, housed in a custom 3D-printed enclosure with USB-C charging.
 
 Each node wakes on a configurable interval, reads the sensor, POSTs the data to a local collector server over Wi-Fi, and goes back to deep sleep. The collector forwards the data to whatever platform or API you're using. The architecture is intentionally simple and easy to adapt.
 
